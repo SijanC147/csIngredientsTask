@@ -10,6 +10,25 @@
       "StackName": "amplify-csingredientstask-dev-145821",
       "StackId": "arn:aws:cloudformation:us-east-1:861305055157:stack/amplify-csingredientstask-dev-145821/86b00110-d810-11eb-ac2d-0a8082d84415",
       "AmplifyAppId": "dy3xpxgkg398d"
+    },
+    "categories": {
+      "auth": {
+        "csingredientstaskade91f4c": {
+          "userPoolId": "us-east-1_nv6yOjv9h",
+          "userPoolName": "cs-ingrs-userpool",
+          "webClientId": "40h3n17nssrsjo83vdsktlrtst",
+          "nativeClientId": "40h3n17nssrsjo83vdsktlrtst"
+        }
+      },
+      "storage": {
+        "CdkBackendStackcsIngrsTableDA4A377EK3NL5UQJ4BYV": {
+          "tableName": "CdkBackendStack-csIngrsTableDA4A377E-K3NL5UQJ4BYV",
+          "region": "us-east-1",
+          "arn": "arn:aws:dynamodb:us-east-1:861305055157:table/CdkBackendStack-csIngrsTableDA4A377E-K3NL5UQJ4BYV",
+          "partitionKeyName": "id",
+          "partitionKeyType": "S"
+        }
+      }
     }
   }
 }
