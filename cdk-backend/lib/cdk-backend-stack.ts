@@ -42,7 +42,7 @@ export class CdkBackendStack extends cdk.Stack {
       signInAliases: { email: true },
     })
 
-    const client = userPool.addClient('Client', {
+    const userPoolClient = userPool.addClient('Client', {
       oAuth: {
         flows: {
           authorizationCodeGrant: true,
@@ -56,6 +56,16 @@ export class CdkBackendStack extends cdk.Stack {
       refreshTokenValidity: cdk.Duration.days(30),
     });
 
+    const identityPool = new cognito.CfnIdentityPool(this, 'csIngrsIdentityPool', {
+      allowUnauthenticatedIdentities: true,
+      cognitoIdentityProviders: [
+        {
+          clientId: userPoolClient.userPoolClientId,
+          providerName: userPool.userPoolProviderName
+        }
+      ]
+    })
+
     const cognitoDomain = userPool.addDomain('csIngrsCognitoDomain', {
       customDomain: {
         domainName: `${authSubDomain}.${parentDomain}`,
@@ -65,7 +75,7 @@ export class CdkBackendStack extends cdk.Stack {
     const auth = new apigw.CognitoUserPoolsAuthorizer(this, 'csIngrsAuthorizer', {
       cognitoUserPools: [userPool]
     })
-    const signInUrl = cognitoDomain.signInUrl(client, {
+    const signInUrl = cognitoDomain.signInUrl(userPoolClient, {
       redirectUri: `https://${siteSubDomain}.${parentDomain}/welcome`,
     })
 
