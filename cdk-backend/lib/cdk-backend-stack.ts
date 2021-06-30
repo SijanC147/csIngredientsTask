@@ -115,23 +115,6 @@ export class CdkBackendStack extends cdk.Stack {
     ingredient.addMethod('PATCH')
     ingredient.addMethod('DELETE')
 
-    //codebuild source
-    // const ghCodebuildCreds = new codebuild.GitHubSourceCredentials(this, 'CodeBuildGitHubCreds', {
-    //   accessToken: cdk.SecretValue.secretsManager('github-access-token', {
-    //     jsonField: 'github-token'
-    //   })
-    // });
-    // const buildBucket = new s3.Bucket(this, 'csIngrsCodeBuildProjectBucket')
-    // const codebuildProject = new codebuild.Project(this, 'csIngredientsCodeBuildProject', {
-    //   source: codebuild.Source.gitHub({ owner: 'SijanC147', repo: 'csIngredientsClient' }),
-    //   artifacts: codebuild.Artifacts.s3({
-    //     name: 'csIngrsCodeBuild',
-    //     bucket: buildBucket,
-    //     includeBuildId: false,
-    //     packageZip: true,
-    //   }),
-    // });
-
     // const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
     //   bucketName: `${siteSubDomain}.${parentDomain}`,
     //   publicReadAccess: true,
@@ -151,7 +134,6 @@ export class CdkBackendStack extends cdk.Stack {
     //   sources: [
     //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsClient.zip"))
     //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))
-    //     s3Deploy.Source.bucket(buildBucket, '/csIngrsCodeBuild.zip')
     //   ],
     //   destinationBucket: deploymentBucket,
     //   distribution,
@@ -176,30 +158,6 @@ export class CdkBackendStack extends cdk.Stack {
       recordName: authSubDomain
     });
 
-    // const buildSpec = codebuild.BuildSpec.fromObjectToYaml({ // Alternatively add a `amplify.yml` to the repo
-    //   version: '1.0',
-    //   frontend: {
-    //     phases: {
-    //       preBuild: {
-    //         commands: [
-    //           'npm ci'
-    //         ]
-    //       },
-    //       build: {
-    //         commands: [
-    //           'ng build'
-    //         ]
-    //       }
-    //     },
-    //     artifacts: {
-    //       baseDirectory: 'dist',
-    //       files: [
-    //          '**/*'
-    //        ]
-    //     }
-    //   }
-    // })
-
     const amplifyApp = new amplify.App(this, 'csIngrsClientApp', {
       sourceCodeProvider: new amplify.GitHubSourceCodeProvider({
         owner: 'SijanC147',
@@ -210,12 +168,9 @@ export class CdkBackendStack extends cdk.Stack {
       }),
       customRules: [amplify.CustomRule.SINGLE_PAGE_APPLICATION_REDIRECT],
     });
-    amplifyApp.addBranch('master')
-    // amplifyApp.addBranch('master', {
-    //   autoBuild: true,
-    //   branchName: 'master',
-    // })
-
+    const masterBranch = amplifyApp.addBranch('master')
+    const amplifyDomain = amplifyApp.addDomain(parentDomain)
+    amplifyDomain.mapSubDomain(masterBranch, siteSubDomain)
 
   }
 }
