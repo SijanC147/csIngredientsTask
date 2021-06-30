@@ -116,53 +116,53 @@ export class CdkBackendStack extends cdk.Stack {
     ingredient.addMethod('DELETE')
 
     //codebuild source
-    const ghCodebuildCreds = new codebuild.GitHubSourceCredentials(this, 'CodeBuildGitHubCreds', {
-      accessToken: cdk.SecretValue.secretsManager('github-access-token', {
-        jsonField: 'github-token'
-      })
-    });
-    const buildBucket = new s3.Bucket(this, 'csIngrsCodeBuildProjectBucket')
-    const codebuildProject = new codebuild.Project(this, 'csIngredientsCodeBuildProject', {
-      source: codebuild.Source.gitHub({ owner: 'SijanC147', repo: 'csIngredientsClient' }),
-      artifacts: codebuild.Artifacts.s3({
-        name: 'csIngrsCodeBuild',
-        bucket: buildBucket,
-        includeBuildId: false,
-        packageZip: true,
-      }),
-    });
+    // const ghCodebuildCreds = new codebuild.GitHubSourceCredentials(this, 'CodeBuildGitHubCreds', {
+    //   accessToken: cdk.SecretValue.secretsManager('github-access-token', {
+    //     jsonField: 'github-token'
+    //   })
+    // });
+    // const buildBucket = new s3.Bucket(this, 'csIngrsCodeBuildProjectBucket')
+    // const codebuildProject = new codebuild.Project(this, 'csIngredientsCodeBuildProject', {
+    //   source: codebuild.Source.gitHub({ owner: 'SijanC147', repo: 'csIngredientsClient' }),
+    //   artifacts: codebuild.Artifacts.s3({
+    //     name: 'csIngrsCodeBuild',
+    //     bucket: buildBucket,
+    //     includeBuildId: false,
+    //     packageZip: true,
+    //   }),
+    // });
 
-    const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
-      bucketName: `${siteSubDomain}.${parentDomain}`,
-      publicReadAccess: true,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      websiteIndexDocument: "index.html"
-    });
-    const distribution = new cloudfront.Distribution(this, 'csIngrsCloudFrontDistribution', {
-      defaultBehavior: {
-        origin: new origins.S3Origin(deploymentBucket)
-      },
-      domainNames: [`${siteSubDomain}.${parentDomain}`],
-      certificate
-    });
+    // const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
+    //   bucketName: `${siteSubDomain}.${parentDomain}`,
+    //   publicReadAccess: true,
+    //   removalPolicy: cdk.RemovalPolicy.RETAIN,
+    //   websiteIndexDocument: "index.html"
+    // });
+    // const distribution = new cloudfront.Distribution(this, 'csIngrsCloudFrontDistribution', {
+    //   defaultBehavior: {
+    //     origin: new origins.S3Origin(deploymentBucket)
+    //   },
+    //   domainNames: [`${siteSubDomain}.${parentDomain}`],
+    //   certificate
+    // });
 
     // Deployment
-    const src = new s3Deploy.BucketDeployment(this, "csIngrsDeployment", {
-      sources: [
-        // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsClient.zip"))
-        // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))
-        s3Deploy.Source.bucket(buildBucket, '/csIngrsCodeBuild.zip')
-      ],
-      destinationBucket: deploymentBucket,
-      distribution,
-      distributionPaths: ["/*"]
-    });
+    // const src = new s3Deploy.BucketDeployment(this, "csIngrsDeployment", {
+    //   sources: [
+    //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsClient.zip"))
+    //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))
+    //     s3Deploy.Source.bucket(buildBucket, '/csIngrsCodeBuild.zip')
+    //   ],
+    //   destinationBucket: deploymentBucket,
+    //   distribution,
+    //   distributionPaths: ["/*"]
+    // });
 
-    new route53.ARecord(this, 'csIngrsSiteAliasRecord', {
-      zone: hostedZone,
-      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution)),
-      recordName: siteSubDomain
-    })
+    // new route53.ARecord(this, 'csIngrsSiteAliasRecord', {
+    //   zone: hostedZone,
+    //   target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution)),
+    //   recordName: siteSubDomain
+    // })
 
     new route53.ARecord(this, 'csIngrsApiAliasRecord', {
       zone: hostedZone,
@@ -194,9 +194,8 @@ export class CdkBackendStack extends cdk.Stack {
     //     artifacts: {
     //       baseDirectory: 'dist',
     //       files: [
-
-    // '**/*'
-    // ]
+    //          '**/*'
+    //        ]
     //     }
     //   }
     // })
