@@ -1,5 +1,4 @@
 import * as s3Deploy from '@aws-cdk/aws-s3-deployment';
-import * as cdk from '@aws-cdk/core';
 import * as s3 from '@aws-cdk/aws-s3';
 import * as cloudfront from '@aws-cdk/aws-cloudfront';
 import * as origins from '@aws-cdk/aws-cloudfront-origins';
@@ -10,6 +9,10 @@ import * as cognito from "@aws-cdk/aws-cognito";
 import * as acm from '@aws-cdk/aws-certificatemanager';
 import * as route53 from '@aws-cdk/aws-route53';
 import * as targets from '@aws-cdk/aws-route53-targets';
+import * as amplify from '@aws-cdk/aws-amplify';
+import * as codebuild from '@aws-cdk/aws-codebuild';
+
+import * as cdk from '@aws-cdk/core';
 
 import { Runtime } from "@aws-cdk/aws-lambda";
 import * as path from 'path';
@@ -23,12 +26,10 @@ export class CdkBackendStack extends cdk.Stack {
       parentDomain,
       subs: [apiSubDomain, siteSubDomain, authSubDomain]
     } = { parentDomain: "seshat.app", subs: ['csapi', 'csingrs', 'csauth'] }
-
     // prepare hostedZone for using custom domain
     const hostedZone = route53.HostedZone.fromLookup(this, 'csIngrsHostedZone', {
       domainName: parentDomain,
     });
-
     // TLS certificate
     const certificate = new acm.Certificate(this, "csIngrsCertificate", {
       domainName: parentDomain,
@@ -41,7 +42,6 @@ export class CdkBackendStack extends cdk.Stack {
       userPoolName: 'cs-ingrs-userpool',
       signInAliases: { email: true },
     })
-
     const userPoolClient = userPool.addClient('Client', {
       oAuth: {
         flows: {
@@ -55,7 +55,6 @@ export class CdkBackendStack extends cdk.Stack {
       idTokenValidity: cdk.Duration.minutes(60),
       refreshTokenValidity: cdk.Duration.days(30),
     });
-
     const identityPool = new cognito.CfnIdentityPool(this, 'csIngrsIdentityPool', {
       allowUnauthenticatedIdentities: true,
       cognitoIdentityProviders: [
@@ -65,7 +64,6 @@ export class CdkBackendStack extends cdk.Stack {
         }
       ]
     })
-
     const cognitoDomain = userPool.addDomain('csIngrsCognitoDomain', {
       customDomain: {
         domainName: `${authSubDomain}.${parentDomain}`,
@@ -83,7 +81,6 @@ export class CdkBackendStack extends cdk.Stack {
     const table = new dynamodb.Table(this, "csIngrsTable", {
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING }
     })
-
 
     // NodeJS lambda function
     const dynamoLambda = new lambda.NodejsFunction(this, "csIngrsLambdaHandler", {
@@ -105,7 +102,6 @@ export class CdkBackendStack extends cdk.Stack {
         certificate
       }
     })
-
     const ingredients = api.root.addResource('ingredients', {
       defaultMethodOptions: {
         authorizer: auth,
@@ -113,28 +109,53 @@ export class CdkBackendStack extends cdk.Stack {
       }
     })
     ingredients.addMethod('GET')
-
     const ingredient = ingredients.addResource('ingredient')
     ingredient.addMethod('GET')
     ingredient.addMethod('POST')
     ingredient.addMethod('PATCH')
     ingredient.addMethod('DELETE')
 
-    // Setup bucket for static website
-    const bucket = new s3.Bucket(this, "csIngrsBucket", {
+    //codebuild source
+    const ghCodebuildCreds = new codebuild.GitHubSourceCredentials(this, 'CodeBuildGitHubCreds', {
+      accessToken: cdk.SecretValue.secretsManager('github-access-token', {
+        jsonField: 'github-token'
+      })
+    });
+    const buildBucket = new s3.Bucket(this, 'csIngrsCodeBuildProjectBucket')
+    const codebuildProject = new codebuild.Project(this, 'csIngredientsCodeBuildProject', {
+      source: codebuild.Source.gitHub({ owner: 'SijanC147', repo: 'csIngredientsClient' }),
+      artifacts: codebuild.Artifacts.s3({
+        name: 'csIngrsCodeBuild',
+        bucket: buildBucket,
+        includeBuildId: false,
+        packageZip: true,
+      }),
+    });
+
+    const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
       bucketName: `${siteSubDomain}.${parentDomain}`,
       publicReadAccess: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       websiteIndexDocument: "index.html"
     });
-
-    // Handles buckets whether or not they are configured for website hosting.
-    const distribution = new cloudfront.Distribution(this, 'csIngrsDistribution', {
+    const distribution = new cloudfront.Distribution(this, 'csIngrsCloudFrontDistribution', {
       defaultBehavior: {
-        origin: new origins.S3Origin(bucket)
+        origin: new origins.S3Origin(deploymentBucket)
       },
       domainNames: [`${siteSubDomain}.${parentDomain}`],
       certificate
+    });
+
+    // Deployment
+    const src = new s3Deploy.BucketDeployment(this, "csIngrsDeployment", {
+      sources: [
+        // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsClient.zip"))
+        // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))
+        s3Deploy.Source.bucket(buildBucket, '/csIngrsCodeBuild.zip')
+      ],
+      destinationBucket: deploymentBucket,
+      distribution,
+      distributionPaths: ["/*"]
     });
 
     new route53.ARecord(this, 'csIngrsSiteAliasRecord', {
@@ -155,14 +176,47 @@ export class CdkBackendStack extends cdk.Stack {
       recordName: authSubDomain
     });
 
+    // const buildSpec = codebuild.BuildSpec.fromObjectToYaml({ // Alternatively add a `amplify.yml` to the repo
+    //   version: '1.0',
+    //   frontend: {
+    //     phases: {
+    //       preBuild: {
+    //         commands: [
+    //           'npm ci'
+    //         ]
+    //       },
+    //       build: {
+    //         commands: [
+    //           'ng build'
+    //         ]
+    //       }
+    //     },
+    //     artifacts: {
+    //       baseDirectory: 'dist',
+    //       files: [
 
-    // Deployment
-    const src = new s3Deploy.BucketDeployment(this, "csIngrsDeployment", {
-      sources: [s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))],
-      destinationBucket: bucket,
-      distribution,
-      distributionPaths: ["/*"]
+    // '**/*'
+    // ]
+    //     }
+    //   }
+    // })
+
+    const amplifyApp = new amplify.App(this, 'csIngrsClientApp', {
+      sourceCodeProvider: new amplify.GitHubSourceCodeProvider({
+        owner: 'SijanC147',
+        repository: 'csIngredientsClient',
+        oauthToken: cdk.SecretValue.secretsManager('github-access-token', {
+          jsonField: 'github-token'
+        })
+      }),
+      customRules: [amplify.CustomRule.SINGLE_PAGE_APPLICATION_REDIRECT],
     });
+    amplifyApp.addBranch('master')
+    // amplifyApp.addBranch('master', {
+    //   autoBuild: true,
+    //   branchName: 'master',
+    // })
+
 
   }
 }
