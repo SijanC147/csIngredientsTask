@@ -86,13 +86,12 @@ export class CdkBackendStack extends cdk.Stack {
     const dynamoLambda = new lambda.NodejsFunction(this, "csIngrsLambdaHandler", {
       runtime: Runtime.NODEJS_14_X,
       entry: path.join(__dirname, '../', 'functions', 'backend.ts'),
-      handler: "lambdaHandler",
       environment: {
         INGRS_TABLE_NAME: table.tableName,
+        INGRS_TABLE_REGION: this.region
       },
     });
     table.grantReadWriteData(dynamoLambda);
-
     // apigateway
     const apiGateWay = new apigw.RestApi(this, "csIngrsRESTApi", {
       domainName: {
@@ -106,9 +105,10 @@ export class CdkBackendStack extends cdk.Stack {
       },
     })
     const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
-    apiGateWay.root
-      .resourceForPath('ingredients')
-      .addMethod("GET", dynamoLambdaIntegration);
+    const ingredients = apiGateWay.root.addResource('ingredients')
+    ingredients.addMethod("GET", dynamoLambdaIntegration);
+    const ingredient = ingredients.addResource('{ingrId}')
+    ingredient.addMethod("ANY", dynamoLambdaIntegration)
     apiGateWay.root
       .resourceForPath('protected')
       .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth })
