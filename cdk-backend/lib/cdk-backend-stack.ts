@@ -74,7 +74,7 @@ export class CdkBackendStack extends cdk.Stack {
       cognitoUserPools: [userPool]
     })
     const signInUrl = cognitoDomain.signInUrl(userPoolClient, {
-      redirectUri: `https://${siteSubDomain}.${parentDomain}/welcome`,
+      redirectUri: `https://${siteSubDomain}.${parentDomain}`,
     })
 
     // dynamodb
@@ -94,26 +94,38 @@ export class CdkBackendStack extends cdk.Stack {
     table.grantReadWriteData(dynamoLambda);
 
     // apigateway
-    const api = new apigw.LambdaRestApi(this, "csIngrsRESTApi", {
-      handler: dynamoLambda,
-      proxy: false,
+    const apiGateWay = new apigw.RestApi(this, "csIngrsRESTApi", {
       domainName: {
         domainName: `${apiSubDomain}.${parentDomain}`,
         certificate
-      }
+      },
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigw.Cors.ALL_ORIGINS,
+        allowMethods: apigw.Cors.ALL_METHODS,
+        allowHeaders: ['*']
+      },
     })
-    const ingredients = api.root.addResource('ingredients', {
-      defaultMethodOptions: {
-        authorizer: auth,
-        authorizationType: apigw.AuthorizationType.COGNITO
-      }
-    })
-    ingredients.addMethod('GET')
-    const ingredient = ingredients.addResource('ingredient')
-    ingredient.addMethod('GET')
-    ingredient.addMethod('POST')
-    ingredient.addMethod('PATCH')
-    ingredient.addMethod('DELETE')
+    const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
+    apiGateWay.root
+      .resourceForPath('ingredients')
+      .addMethod("GET", dynamoLambdaIntegration);
+    apiGateWay.root
+      .resourceForPath('protected')
+      .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth })
+
+
+    // const ingredients = apiGateWay.root.addResource('ingredients', {
+    //   defaultMethodOptions: {
+    //     authorizer: auth,
+    //     authorizationType: apigw.AuthorizationType.COGNITO
+    //   }
+    // })
+    // ingredients.addMethod('GET')
+    // const ingredient = ingredients.addResource('ingredient')
+    // ingredient.addMethod('GET')
+    // ingredient.addMethod('POST')
+    // ingredient.addMethod('PATCH')
+    // ingredient.addMethod('DELETE')
 
     // const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
     //   bucketName: `${siteSubDomain}.${parentDomain}`,
@@ -148,7 +160,7 @@ export class CdkBackendStack extends cdk.Stack {
 
     new route53.ARecord(this, 'csIngrsApiAliasRecord', {
       zone: hostedZone,
-      target: route53.RecordTarget.fromAlias(new targets.ApiGateway(api)),
+      target: route53.RecordTarget.fromAlias(new targets.ApiGateway(apiGateWay)),
       recordName: apiSubDomain
     });
 
@@ -167,6 +179,13 @@ export class CdkBackendStack extends cdk.Stack {
         })
       }),
       customRules: [amplify.CustomRule.SINGLE_PAGE_APPLICATION_REDIRECT],
+      environmentVariables: {
+        'IDENTITY_POOL_ID': identityPool.ref,
+        'USER_POOL_ID': userPool.userPoolId,
+        'USER_POOL_CLIENT_ID': userPoolClient.userPoolClientId,
+        'API_ENDPOINT': apiGateWay.url.slice(0, apiGateWay.url.endsWith('/') ? -1 : apiGateWay.url.length),
+        'REGION': this.region
+      }
     });
     const masterBranch = amplifyApp.addBranch('master')
     const amplifyDomain = amplifyApp.addDomain(parentDomain)
