@@ -3,6 +3,7 @@ import {
     APIGatewayProxyResult
 } from "aws-lambda";
 import * as AWS from 'aws-sdk';
+
 const db = new AWS.DynamoDB.DocumentClient()
 const TableName = process.env.INGRS_TABLE_NAME || 'IngredientsDynamoDbTable'
 const SpoonLambdaName = process.env.SPOON_LAMBDA_NAME || 'IngredientsSpoonProxyLambdaFn'
@@ -22,6 +23,7 @@ interface IngredientParams {
     ingrId?: string;
 }
 
+// Entry point - switches on request to CRUD fn (below)
 export const handler = async (
     event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
@@ -84,6 +86,7 @@ export const handler = async (
 
 }
 
+// Fn to invoke spoon from here, returns ingredient object from spoonacular
 const askSpoonForDetails = async (ingrId: number) => {
     let spoonPromise = new Promise<any>((resolve, reject) => {
         SpoonLambda.invoke({
@@ -122,7 +125,6 @@ const getAllIngredients = async () => {
     }
     return body;
 };
-
 
 const getIngredient = async ({ ingrId }: IngredientParams) => {
     let body
@@ -182,6 +184,7 @@ const createIngredient = async ({ ingrId }: IngredientParams) => {
     return body
 }
 
+//TODO decide what can be updated vs what must be taken from spoonacular
 // const updateIngredient = async ({ ingrId }: IngredientParams) => {
 //     let body
 //     try {
@@ -201,6 +204,7 @@ const createIngredient = async ({ ingrId }: IngredientParams) => {
 //     return body
 // }
 
+// helper function to get specific nutrient
 const _queryNutritionProps = (
     spoonIngredient: any,
     nutriGroup: string = "nutrients",
