@@ -83,15 +83,29 @@ export class CdkBackendStack extends cdk.Stack {
       tableName: "IngredientsDynamoDbTable"
     })
 
-    // NodeJS lambda function
+    // Lambda Definitions
+    let spoonApiKey = cdk.SecretValue.secretsManager('spoonacular', {
+      jsonField: 'api-key',
+    })
+    const spoonLambda = new lambda.NodejsFunction(this, "csIngrsSpoonLambda", {
+      functionName: "IngredientsSpoonProxyLambdaFn",
+      runtime: Runtime.NODEJS_14_X,
+      entry: path.join(__dirname, '../', 'functions', 'spoon.js'),
+      environment: {
+        SPOON_API_KEY: spoonApiKey as unknown as string
+      }
+    })
     const dynamoLambda = new lambda.NodejsFunction(this, "csIngrsLambdaHandler", {
       runtime: Runtime.NODEJS_14_X,
       entry: path.join(__dirname, '../', 'functions', 'backend.ts'),
       environment: {
         INGRS_TABLE_NAME: table.tableName,
-        INGRS_TABLE_REGION: this.region
+        INGRS_TABLE_REGION: this.region,
+        SPOON_LAMBDA_NAME: spoonLambda.functionName,
+        SPOON_LAMBDA_REGION: this.region,
       },
     });
+    spoonLambda.grantInvoke(dynamoLambda);
     table.grantReadWriteData(dynamoLambda);
     // apigateway
     const apiGateWay = new apigw.RestApi(this, "csIngrsRESTApi", {
@@ -107,25 +121,16 @@ export class CdkBackendStack extends cdk.Stack {
     })
     const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
     const ingredients = apiGateWay.root.addResource('ingredients')
-    ingredients.addMethod("GET", dynamoLambdaIntegration);
+    ingredients.addMethod("GET", dynamoLambdaIntegration)
+    ingredients.addMethod("POST", dynamoLambdaIntegration)
     const ingredient = ingredients.addResource('{ingrId}')
     ingredient.addMethod("ANY", dynamoLambdaIntegration)
+    const spoonSearch = ingredients.addResource('spoon')
+    spoonSearch.addMethod('GET', new apigw.LambdaIntegration(spoonLambda));
+
     apiGateWay.root
       .resourceForPath('protected')
       .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth });
-
-    let spoonApiKey = cdk.SecretValue.secretsManager('spoonacular', {
-      jsonField: 'api-key',
-    })
-    const spoonLambda = new lambda.NodejsFunction(this, "csIngrsSpoonLambda", {
-      runtime: Runtime.NODEJS_14_X,
-      entry: path.join(__dirname, '../', 'functions', 'spoon.js'),
-      environment: {
-        SPOON_API_KEY: spoonApiKey as unknown as string
-      }
-    })
-    const spoonSearch = ingredients.addResource('spoon')
-    spoonSearch.addMethod('GET', new apigw.LambdaIntegration(spoonLambda));
 
     // const ingredients = apiGateWay.root.addResource('ingredients', {
     //   defaultMethodOptions: {
