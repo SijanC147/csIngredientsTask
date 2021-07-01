@@ -10,7 +10,6 @@ import * as acm from '@aws-cdk/aws-certificatemanager';
 import * as route53 from '@aws-cdk/aws-route53';
 import * as targets from '@aws-cdk/aws-route53-targets';
 import * as amplify from '@aws-cdk/aws-amplify';
-import * as codebuild from '@aws-cdk/aws-codebuild';
 
 import * as cdk from '@aws-cdk/core';
 
@@ -21,23 +20,34 @@ export class CdkBackendStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // define once for reuse
+    // Reusable variable declerations 
     const {
       parentDomain,
       subs: [apiSubDomain, siteSubDomain, authSubDomain]
     } = { parentDomain: "seshat.app", subs: ['csapi', 'csingrs', 'csauth'] }
-    // prepare hostedZone for using custom domain
+
+    // AWS SecretManager: Load secret values required for spinning up Infra
+    let spoonApiKey = cdk.SecretValue.secretsManager('spoonacular', {
+      jsonField: 'api-key',
+    })
+    let githubToken = cdk.SecretValue.secretsManager('github-access-token', {
+      jsonField: 'github-token'
+    })
+
+    // AWS Route53: prepare hostedZone for using custom domain
     const hostedZone = route53.HostedZone.fromLookup(this, 'csIngrsHostedZone', {
       domainName: parentDomain,
     });
-    // TLS certificate
+
+    // AWS Certificate Manager: setup TLS certificate  
     const certificate = new acm.Certificate(this, "csIngrsCertificate", {
       domainName: parentDomain,
       subjectAlternativeNames: [`*.${parentDomain}`],
       validation: acm.CertificateValidation.fromDns(hostedZone),
     });
 
-    // Create Cognito user pool for authentication
+    // AWS Cognito: Setup user pools, id pools and clients 
+    // TODO figure out the auth flow without using aws client on FE
     const userPool = new cognito.UserPool(this, 'csIngrsUserPool', {
       userPoolName: 'cs-ingrs-userpool',
       signInAliases: { email: true },
@@ -77,16 +87,14 @@ export class CdkBackendStack extends cdk.Stack {
       redirectUri: `https://${siteSubDomain}.${parentDomain}`,
     })
 
-    // dynamodb
+    // AWS DynamoDB: Setup DynamoDB table for ingredients
     const table = new dynamodb.Table(this, "csIngrsTable", {
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       tableName: "IngredientsDynamoDbTable"
     })
 
-    // Lambda Definitions
-    let spoonApiKey = cdk.SecretValue.secretsManager('spoonacular', {
-      jsonField: 'api-key',
-    })
+    // AWS Lambda: Setup lambda functions
+    // SpoonLambda will proxy requests to spoonacular API
     const spoonLambda = new lambda.NodejsFunction(this, "csIngrsSpoonLambda", {
       functionName: "IngredientsSpoonProxyLambdaFn",
       runtime: Runtime.NODEJS_14_X,
@@ -95,6 +103,7 @@ export class CdkBackendStack extends cdk.Stack {
         SPOON_API_KEY: spoonApiKey as unknown as string
       }
     })
+    // dynamoLambda handles CRUD ops on ingredients table
     const dynamoLambda = new lambda.NodejsFunction(this, "csIngrsLambdaHandler", {
       runtime: Runtime.NODEJS_14_X,
       entry: path.join(__dirname, '../', 'functions', 'backend.ts'),
@@ -105,20 +114,23 @@ export class CdkBackendStack extends cdk.Stack {
         SPOON_LAMBDA_REGION: this.region,
       },
     });
-    spoonLambda.grantInvoke(dynamoLambda);
-    table.grantReadWriteData(dynamoLambda);
-    // apigateway
+    spoonLambda.grantInvoke(dynamoLambda); // let dynamoLambda call spoonLambda
+    table.grantReadWriteData(dynamoLambda); // give table access to dynamoLambda
+
+    // AWS APIGateway: Setup API endpoints for backend ops
     const apiGateWay = new apigw.RestApi(this, "csIngrsRESTApi", {
       domainName: {
         domainName: `${apiSubDomain}.${parentDomain}`,
         certificate
       },
+      // ! Super loose, should be changed in production
       defaultCorsPreflightOptions: {
         allowOrigins: apigw.Cors.ALL_ORIGINS,
         allowMethods: apigw.Cors.ALL_METHODS,
         allowHeaders: ['*']
       },
     })
+    // Integrate API with lambda functions
     const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
     const ingredients = apiGateWay.root.addResource('ingredients')
     ingredients.addMethod("GET", dynamoLambdaIntegration)
@@ -128,73 +140,33 @@ export class CdkBackendStack extends cdk.Stack {
     const spoonSearch = ingredients.addResource('spoon')
     spoonSearch.addMethod('GET', new apigw.LambdaIntegration(spoonLambda));
 
+    // * Only used for testing authentication
     apiGateWay.root
       .resourceForPath('protected')
       .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth });
+    // ***********************************
 
-    // const ingredients = apiGateWay.root.addResource('ingredients', {
-    //   defaultMethodOptions: {
-    //     authorizer: auth,
-    //     authorizationType: apigw.AuthorizationType.COGNITO
-    //   }
-    // })
-    // ingredients.addMethod('GET')
-    // const ingredient = ingredients.addResource('ingredient')
-    // ingredient.addMethod('GET')
-    // ingredient.addMethod('POST')
-    // ingredient.addMethod('PATCH')
-    // ingredient.addMethod('DELETE')
-
-    // const deploymentBucket = new s3.Bucket(this, "csIngrsDeploymentBucket", {
-    //   bucketName: `${siteSubDomain}.${parentDomain}`,
-    //   publicReadAccess: true,
-    //   removalPolicy: cdk.RemovalPolicy.RETAIN,
-    //   websiteIndexDocument: "index.html"
-    // });
-    // const distribution = new cloudfront.Distribution(this, 'csIngrsCloudFrontDistribution', {
-    //   defaultBehavior: {
-    //     origin: new origins.S3Origin(deploymentBucket)
-    //   },
-    //   domainNames: [`${siteSubDomain}.${parentDomain}`],
-    //   certificate
-    // });
-
-    // Deployment
-    // const src = new s3Deploy.BucketDeployment(this, "csIngrsDeployment", {
-    //   sources: [
-    //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsClient.zip"))
-    //     // s3Deploy.Source.asset(path.join(__dirname, '../', '../', "dist", "csIngredientsTask"))
-    //   ],
-    //   destinationBucket: deploymentBucket,
-    //   distribution,
-    //   distributionPaths: ["/*"]
-    // });
-
-    // new route53.ARecord(this, 'csIngrsSiteAliasRecord', {
-    //   zone: hostedZone,
-    //   target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution)),
-    //   recordName: siteSubDomain
-    // })
-
+    // AWS Route53: Add DNS entries for our API (csapi.seshat.app)
     new route53.ARecord(this, 'csIngrsApiAliasRecord', {
       zone: hostedZone,
       target: route53.RecordTarget.fromAlias(new targets.ApiGateway(apiGateWay)),
       recordName: apiSubDomain
     });
 
+    // AWS Route53: Add DNS entry for auth domain (csauth.seshat.app)
     new route53.ARecord(this, 'csIngrsAuthAliasRecord', {
       zone: hostedZone,
       target: route53.RecordTarget.fromAlias(new targets.UserPoolDomainTarget(cognitoDomain)),
       recordName: authSubDomain
     });
 
+    // AWS Amplify: Setup amplify app tied to repo containing frontend code
+    // ? Separates logic for IaC and frontend dev - values injected through ENV at build
     const amplifyApp = new amplify.App(this, 'csIngrsClientApp', {
       sourceCodeProvider: new amplify.GitHubSourceCodeProvider({
         owner: 'SijanC147',
         repository: 'csIngredientsClient',
-        oauthToken: cdk.SecretValue.secretsManager('github-access-token', {
-          jsonField: 'github-token'
-        })
+        oauthToken: githubToken
       }),
       customRules: [amplify.CustomRule.SINGLE_PAGE_APPLICATION_REDIRECT],
       environmentVariables: {
