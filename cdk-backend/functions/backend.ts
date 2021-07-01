@@ -2,15 +2,9 @@ import {
     APIGatewayProxyEvent,
     APIGatewayProxyResult
 } from "aws-lambda";
-import {
-    DynamoDBClient,
-    GetItemCommand,
-    PutItemCommand,
-    DeleteItemCommand,
-    ScanCommand,
-    UpdateItemCommand
-} from '@aws-sdk/client-dynamodb'
-import { marshall, unmarshall } from '@aws-sdk/util-dynamodb'
+import * as AWS from 'aws-sdk';
+const db = new AWS.DynamoDB.DocumentClient()
+const TableName = process.env.INGRS_TABLE_NAME || 'IngredientsDynamoDbTable'
 
 interface Ingredient {
     id: string;
@@ -20,9 +14,8 @@ interface Ingredient {
     fat: number;
     carbohydrates: number;
 }
-
 interface IngredientParams {
-    ingrId?: string
+    ingrId?: string;
 }
 
 export const handler = async (
@@ -41,10 +34,25 @@ export const handler = async (
             case "GET /ingredients":
                 body = await getAllIngredients()
                 break;
+            // case "POST /ingredients":
+            //     if (!event.body) break;
+            //     body = await createIngredient(
+            //         typeof event.body == 'object' ? event.body : JSON.parse(event.body)
+            //     )
+            //     break;
             case "GET /ingredients/{ingrId}":
                 body = await getIngredient(event.pathParameters as { ingrId: string })
                 break;
-
+            case "DELETE /ingredients/{ingrId}":
+                body = await deleteIngredient(event.pathParameters as { ingrId: string })
+                break;
+            // case "PUT /ingredients/{ingrId}":
+            //     if (!event.body) break;
+            //     body = await updateIngredient(
+            //         event.pathParameters as { ingrId: string },
+            //         typeof event.body == 'object' ? event.body : JSON.parse(event.body)
+            //     )
+            //     break;
             default:
                 throw new Error(`Unsupported route: "${routeKey}"`);
         }
@@ -69,15 +77,10 @@ export const handler = async (
 }
 
 const getAllIngredients = async () => {
-    const dbClient = new DynamoDBClient({})
     let body;
     try {
-        const { Items } = await dbClient.send(new ScanCommand({ TableName: process.env.INGRS_TABLE_NAME }));
-        body = {
-            message: "Successfully retrieved all ingredients.",
-            data: Items?.map((item) => unmarshall(item)),
-            Items,
-        }
+        const { Items } = await db.scan({ TableName }).promise();
+        body = Items
     } catch (e) {
         console.error(e);
         body = {
@@ -92,17 +95,12 @@ const getAllIngredients = async () => {
 
 const getIngredient = async ({ ingrId }: IngredientParams) => {
     let body
-    const dbClient = new DynamoDBClient({})
     try {
-        const { Item } = await dbClient.send(new GetItemCommand({
-            TableName: process.env.INGRS_TABLE_NAME,
-            Key: marshall({ ingrId })
-        }))
-        body = {
-            message: "Successfully retrieved ingredient.",
-            data: Item ? unmarshall(Item) : {},
-            rawData: Item,
-        };
+        const { Item } = await db.get({
+            TableName,
+            Key: { ['id']: ingrId }
+        }).promise()
+        body = Item
     } catch (e) {
         console.error(e);
         body = {
@@ -113,3 +111,60 @@ const getIngredient = async ({ ingrId }: IngredientParams) => {
     }
     return body
 }
+
+const deleteIngredient = async ({ ingrId }: IngredientParams) => {
+    let body
+    try {
+        await db.delete({
+            TableName,
+            Key: { ['id']: ingrId }
+        }).promise()
+        body = ''
+    } catch (e) {
+        console.error(e);
+        body = {
+            message: "Failed to retrieve ingredient.",
+            errorMsg: e.message,
+            errorStack: e.stack,
+        }
+    }
+    return body
+}
+
+// const createIngredient = async ({ ingrId }: IngredientParams) => {
+//     let body
+//     try {
+//         await db.delete({
+//             TableName,
+//             Key: { ['id']: ingrId }
+//         }).promise()
+//         body = ''
+//     } catch (e) {
+//         console.error(e);
+//         body = {
+//             message: "Failed to retrieve ingredient.",
+//             errorMsg: e.message,
+//             errorStack: e.stack,
+//         }
+//     }
+//     return body
+// }
+
+// const updateIngredient = async ({ ingrId }: IngredientParams) => {
+//     let body
+//     try {
+//         await db.delete({
+//             TableName,
+//             Key: { ['id']: ingrId }
+//         }).promise()
+//         body = ''
+//     } catch (e) {
+//         console.error(e);
+//         body = {
+//             message: "Failed to retrieve ingredient.",
+//             errorMsg: e.message,
+//             errorStack: e.stack,
+//         }
+//     }
+//     return body
+// }

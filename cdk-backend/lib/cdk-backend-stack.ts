@@ -79,7 +79,8 @@ export class CdkBackendStack extends cdk.Stack {
 
     // dynamodb
     const table = new dynamodb.Table(this, "csIngrsTable", {
-      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING }
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      tableName: "IngredientsDynamoDbTable"
     })
 
     // NodeJS lambda function
@@ -111,8 +112,20 @@ export class CdkBackendStack extends cdk.Stack {
     ingredient.addMethod("ANY", dynamoLambdaIntegration)
     apiGateWay.root
       .resourceForPath('protected')
-      .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth })
+      .addMethod("GET", dynamoLambdaIntegration, { authorizer: auth });
 
+    let spoonApiKey = cdk.SecretValue.secretsManager('spoonacular', {
+      jsonField: 'api-key',
+    })
+    const spoonLambda = new lambda.NodejsFunction(this, "csIngrsSpoonLambda", {
+      runtime: Runtime.NODEJS_14_X,
+      entry: path.join(__dirname, '../', 'functions', 'spoon.js'),
+      environment: {
+        SPOON_API_KEY: spoonApiKey as unknown as string
+      }
+    })
+    const spoonSearch = ingredients.addResource('spoon')
+    spoonSearch.addMethod('GET', new apigw.LambdaIntegration(spoonLambda));
 
     // const ingredients = apiGateWay.root.addResource('ingredients', {
     //   defaultMethodOptions: {
