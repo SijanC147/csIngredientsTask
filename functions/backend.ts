@@ -1,6 +1,7 @@
 import {
     APIGatewayProxyEvent,
-    APIGatewayProxyResult
+    APIGatewayProxyResult,
+    Context,
 } from "aws-lambda";
 import * as AWS from 'aws-sdk';
 
@@ -21,11 +22,14 @@ interface Ingredient {
 }
 interface IngredientParams {
     ingrId?: string;
+    spoonId?: number;
 }
 
 // Entry point - switches on request to CRUD fn (below)
 export const handler = async (
-    event: APIGatewayProxyEvent
+    event: APIGatewayProxyEvent,
+    context: Context,
+    callback: () => void
 ): Promise<APIGatewayProxyResult> => {
     let body
     let statusCode = 200;
@@ -47,6 +51,7 @@ export const handler = async (
                     break;
                 }
                 body = await createIngredient(
+                    context,
                     typeof event.body == 'object' ? event.body : JSON.parse(event.body)
                 )
                 break;
@@ -87,14 +92,14 @@ export const handler = async (
 }
 
 // Fn to invoke spoon from here, returns ingredient object from spoonacular
-const askSpoonForDetails = async (ingrId: number) => {
+const askSpoonForDetails = async (spoonId: number) => {
     let spoonPromise = new Promise<any>((resolve, reject) => {
         SpoonLambda.invoke({
             FunctionName: SpoonLambdaName,
             InvocationType: 'RequestResponse',
             Payload: JSON.stringify({
                 queryStringParameters: {
-                    id: ingrId,
+                    id: spoonId,
                 }
             })
         }, (err, data) => {
@@ -164,19 +169,22 @@ const deleteIngredient = async ({ ingrId }: IngredientParams) => {
     return body
 }
 
-const createIngredient = async ({ ingrId }: IngredientParams) => {
+const createIngredient = async (ctx: Context, { spoonId }: IngredientParams) => {
     let body
     try {
-        const { id, ...newIngredient } = await askSpoonForDetails(+ingrId!)
+        const newIngredient = await askSpoonForDetails(+spoonId!)
         await db.put({
             TableName,
-            Item: { ['id']: `${id}`, ...newIngredient } // Not tied to using Spoon ID, but works for now.
+            Item: {
+                ['id']: ctx.awsRequestId,
+                ...newIngredient
+            }
         }).promise()
-        body = `Successfully created ingredient with id ${id}`
+        body = `Successfully created ingredient with id ${spoonId}`
     } catch (e) {
         console.error(e);
         body = {
-            message: `Failed to create ingredient with id ${ingrId}`,
+            message: `Failed to create ingredient with id ${spoonId}`,
             errorMsg: e.message,
             errorStack: e.stack,
         }
@@ -203,19 +211,3 @@ const createIngredient = async ({ ingrId }: IngredientParams) => {
 //     }
 //     return body
 // }
-
-// helper function to get specific nutrient
-const _queryNutritionProps = (
-    spoonIngredient: any,
-    nutriGroup: string = "nutrients",
-    query: string
-) => {
-    const matches = spoonIngredient.nutrition[nutriGroup].filter((nutri: any) => {
-        nutri.name.toLowerCase() === query.toLowerCase()
-    }).map(({ amount, unit }: { amount: number, unit: string }) => {
-        return {
-            query: { amount, unit }
-        }
-    })
-    return matches[0]
-}

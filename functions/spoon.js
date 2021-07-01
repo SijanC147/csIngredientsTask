@@ -74,7 +74,7 @@ exports.handler = async (event, context, callback) => {
                         callback(err);
                     }
                     console.log('data:', data);
-                    resolve(data)
+                    resolve(spoonToIngr(data))
                 });
             } else if (typeof q !== 'undefined') {
                 service.queryAll({ q }, (err, data) => {
@@ -99,3 +99,26 @@ exports.handler = async (event, context, callback) => {
     };
     return response;
 };
+
+const spoonToIngr = ({ id, name, image, nutrition: { nutrients } }) => {
+    return {
+        spoonId: id,
+        title: name,
+        image,
+        ..._queryNutrition(nutrients, 'carbohydrates'),
+        ..._queryNutrition(nutrients, 'fat'),
+        ..._queryNutrition(nutrients, 'calories')
+    }
+}
+
+// helper function to get specific nutrient
+const _queryNutrition = (arr, query) => {
+    const matches = arr.filter((el) => {
+        return el.name.toLowerCase() === query.toLowerCase()
+    }).map(({ amount, unit }) => {
+        var obj = {}
+        obj[query] = { amount, unit }
+        return obj
+    })
+    return matches.length > 0 ? matches[0] : {};
+}
