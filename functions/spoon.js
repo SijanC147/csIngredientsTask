@@ -83,7 +83,7 @@ exports.handler = async (event, context, callback) => {
                         callback(err);
                     }
                     console.log('data:', data);
-                    resolve(data)
+                    resolve(data.results)
                 });
             } else {
                 callback("ERR: Must supply one of id or q parameters.");
