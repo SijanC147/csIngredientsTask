@@ -90,7 +90,7 @@ export class CdkBackendStack extends cdk.Stack {
     // AWS DynamoDB: Setup DynamoDB table for ingredients
     const table = new dynamodb.Table(this, "csIngrsTable", {
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
-      tableName: "IngredientsDynamoDbTable"
+      tableName: "IngredientsDynamoDbTable",
     })
 
     // AWS Lambda: Setup lambda functions
@@ -118,27 +118,35 @@ export class CdkBackendStack extends cdk.Stack {
     table.grantReadWriteData(dynamoLambda); // give table access to dynamoLambda
 
     // AWS APIGateway: Setup API endpoints for backend ops
+    const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
+    const spoonLambdaIntegeration = new apigw.LambdaIntegration(spoonLambda)
     const apiGateWay = new apigw.RestApi(this, "csIngrsRESTApi", {
       domainName: {
         domainName: `${apiSubDomain}.${parentDomain}`,
         certificate
       },
+      defaultIntegration: dynamoLambdaIntegration
       // ! Super loose, should be changed in production
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigw.Cors.ALL_ORIGINS,
-        allowMethods: apigw.Cors.ALL_METHODS,
-        allowHeaders: ['*']
-      },
+      // defaultCorsPreflightOptions: {
+      //   allowOrigins: apigw.Cors.ALL_ORIGINS,
+      //   allowMethods: apigw.Cors.ALL_METHODS,
+      //   allowHeaders: ['*']
+      // },
     })
-    // Integrate API with lambda functions
-    const dynamoLambdaIntegration = new apigw.LambdaIntegration(dynamoLambda)
+
     const ingredients = apiGateWay.root.addResource('ingredients')
-    ingredients.addMethod("GET", dynamoLambdaIntegration)
-    ingredients.addMethod("POST", dynamoLambdaIntegration)
+    ingredients.addMethod("ANY")
     const ingredient = ingredients.addResource('{ingrId}')
-    ingredient.addMethod("ANY", dynamoLambdaIntegration)
-    const spoonSearch = ingredients.addResource('spoon')
-    spoonSearch.addMethod('GET', new apigw.LambdaIntegration(spoonLambda));
+    ingredient.addMethod("ANY")
+    // ingredients.addMethod("GET", dynamoLambdaIntegration)
+    // ingredients.addMethod("POST", dynamoLambdaIntegration)
+
+    // ingredient.addMethod("ANY", dynamoLambdaIntegration)
+
+    const spoonSearch = ingredients.addResource('spoon', {
+      defaultIntegration: spoonLambdaIntegeration
+    })
+    spoonSearch.addMethod('GET');
 
     // * Only used for testing authentication
     apiGateWay.root

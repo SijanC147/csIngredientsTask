@@ -34,7 +34,8 @@ export const handler = async (
     let body
     let statusCode = 200;
     const headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
     };
     console.log('event', JSON.stringify(event));
 
