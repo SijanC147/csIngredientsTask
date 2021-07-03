@@ -105,6 +105,7 @@ export class CdkBackendStack extends cdk.Stack {
     })
     // dynamoLambda handles CRUD ops on ingredients table
     const dynamoLambda = new lambda.NodejsFunction(this, "csIngrsLambdaHandler", {
+      functionName: "IngredientsDynamoCRUDLambdaFn",
       runtime: Runtime.NODEJS_14_X,
       entry: path.join(__dirname, '../', 'functions', 'backend.ts'),
       environment: {
@@ -125,13 +126,13 @@ export class CdkBackendStack extends cdk.Stack {
         domainName: `${apiSubDomain}.${parentDomain}`,
         certificate
       },
-      defaultIntegration: dynamoLambdaIntegration
+      defaultIntegration: dynamoLambdaIntegration,
       // ! Super loose, should be changed in production
-      // defaultCorsPreflightOptions: {
-      //   allowOrigins: apigw.Cors.ALL_ORIGINS,
-      //   allowMethods: apigw.Cors.ALL_METHODS,
-      //   allowHeaders: ['*']
-      // },
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigw.Cors.ALL_ORIGINS,
+        allowMethods: apigw.Cors.ALL_METHODS,
+        allowHeaders: ['*']
+      },
     })
 
     const ingredients = apiGateWay.root.addResource('ingredients')
